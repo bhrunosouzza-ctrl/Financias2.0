@@ -1,0 +1,5 @@
+{
+  "name": "Finance Analyzer",
+  "description": "A comprehensive finance dashboard to analyze monthly income, expenses, loans, and vehicle costs.",
+  "requestFramePermissions": []
+}
