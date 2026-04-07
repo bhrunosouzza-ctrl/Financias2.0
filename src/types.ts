@@ -18,6 +18,7 @@ export interface Loan {
   paidInstallments: number;
   installmentValue: number;
   interestMonthly: number;
+  month: string;
   endMonth?: string;
 }
 

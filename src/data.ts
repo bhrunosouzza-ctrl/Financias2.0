@@ -71,7 +71,8 @@ export const FINANCE_DATA: FinanceData = {
       "installments": 1,
       "paidInstallments": 1,
       "installmentValue": 862.21,
-      "interestMonthly": 0
+      "interestMonthly": 0,
+      "month": "Janeiro"
     },
     {
       "id": "4tbgegne0",
@@ -81,6 +82,7 @@ export const FINANCE_DATA: FinanceData = {
       "paidInstallments": 1,
       "installmentValue": 847.79,
       "interestMonthly": 0,
+      "month": "Fevereiro",
       "endMonth": "Fevereiro"
     },
     {
@@ -91,6 +93,7 @@ export const FINANCE_DATA: FinanceData = {
       "paidInstallments": 1,
       "installmentValue": 835.67,
       "interestMonthly": 0,
+      "month": "Março",
       "endMonth": "Março"
     },
     {
@@ -100,7 +103,8 @@ export const FINANCE_DATA: FinanceData = {
       "installments": 1,
       "paidInstallments": 0,
       "installmentValue": 220,
-      "interestMonthly": 0
+      "interestMonthly": 0,
+      "month": "Abril"
     },
     {
       "id": "ks186ve2r",
@@ -110,6 +114,7 @@ export const FINANCE_DATA: FinanceData = {
       "paidInstallments": 1,
       "installmentValue": 570,
       "interestMonthly": 0,
+      "month": "Fevereiro",
       "endMonth": "Fevereiro"
     }
   ],
