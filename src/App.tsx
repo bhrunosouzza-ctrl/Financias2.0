@@ -54,9 +54,9 @@ export default function App() {
     const monthVehicleExpenses = data.vehicleExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).reduce((a, b) => a + b.value, 0);
     const monthCategorizedExpenses = data.categorizedExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).reduce((a, b) => a + b.value, 0);
     
-    const baseIncome = monthData ? Object.values(monthData.income).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
+    const baseIncome = monthData ? Object.values(monthData.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
     const totalIncome = baseIncome + monthLoanIncome;
-    const baseExpenses = monthData ? Object.values(monthData.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
+    const baseExpenses = monthData ? Object.values(monthData.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
     const totalExpenses = baseExpenses + monthLoanPayments + monthVehicleExpenses + monthCategorizedExpenses;
     
     return {
@@ -70,12 +70,12 @@ export default function App() {
 
   const chartData = useMemo(() => {
     return data.months.filter(m => m.year === selectedYear).map(m => {
-      const baseIncome = Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      const baseIncome = Object.values(m.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
       const monthLoanIncome = data.loans.filter(l => l.month === m.month && l.year === m.year).reduce((a, b) => a + b.totalValue, 0);
       const monthLoanPayments = data.loanPayments?.filter(p => p.month === m.month && p.year === m.year).reduce((a, b) => a + b.value, 0) || 0;
       const totalIncome = baseIncome + monthLoanIncome;
       
-      const baseExpenses = Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      const baseExpenses = Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
       const totalExpenses = baseExpenses + monthLoanPayments;
       const monthInvestments = data.investments?.filter(i => i.month === m.month && i.year === m.year).reduce((a, b) => a + b.value, 0) || 0;
       
@@ -125,8 +125,8 @@ export default function App() {
 
     const filteredMonths = data.months.filter(m => m.year === selectedYear);
     filteredMonths.forEach(m => {
-      baseIncome += Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
-      totalExpenses += Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      baseIncome += Object.values(m.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      totalExpenses += Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
     });
 
     const totalLoanIncome = data.loans.filter(l => l.year === selectedYear).reduce((a, b) => a + b.totalValue, 0);
@@ -987,8 +987,8 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
     let totalFixedExpenses = 0;
     
     filteredData.months.forEach(m => {
-      baseIncome += Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
-      totalFixedExpenses += Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      baseIncome += Object.values(m.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      totalFixedExpenses += Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
     });
 
     const totalLoanIncome = filteredData.loans.reduce((a, b) => a + b.totalValue, 0);
@@ -1018,7 +1018,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
   const annualIncomeBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
     filteredData.months.forEach(m => {
-      Object.entries(m.income).forEach(([key, value]) => {
+      Object.entries(m.income || {}).forEach(([key, value]) => {
         breakdown[key] = (breakdown[key] || 0) + (value as number);
       });
     });
@@ -1034,7 +1034,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
   const annualFixedBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
     filteredData.months.forEach(m => {
-      Object.entries(m.expenses).forEach(([key, value]) => {
+      Object.entries(m.expenses || {}).forEach(([key, value]) => {
         breakdown[key] = (breakdown[key] || 0) + (value as number);
       });
     });
@@ -1115,12 +1115,12 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
           </thead>
           <tbody className="divide-y divide-slate-100">
             {data.months.map(m => {
-              const baseIncome = Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+              const baseIncome = Object.values(m.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
               const mLoanIncome = data.loans.filter(l => l.month === m.month).reduce((a, b) => a + b.totalValue, 0);
               const mLoanPayments = data.loanPayments?.filter(p => p.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
               const mIncome = baseIncome + mLoanIncome - mLoanPayments;
               
-              const mFixed = Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+              const mFixed = Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
               const mVar = data.categorizedExpenses.filter(e => e.month === m.month).reduce((a, b) => a + b.value, 0);
               const mVeh = data.vehicleExpenses.filter(e => e.month === m.month).reduce((a, b) => a + b.value, 0);
               const mInv = data.investments?.filter(i => i.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
