@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { FINANCE_DATA as INITIAL_DATA } from "./data";
 import { formatCurrency, cn } from "./lib/utils";
-import { FinanceData, MonthData, CategorizedExpense, VehicleExpense, Loan } from "./types";
+import { FinanceData, MonthData, CategorizedExpense, VehicleExpense, Loan, Investment, LoanPayment } from "./types";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -19,11 +19,12 @@ const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"
 
 export default function App() {
   const [data, setData] = useState<FinanceData>(() => {
-    const saved = localStorage.getItem("finance_data");
+    const saved = localStorage.getItem("finance_data_v3");
     return saved ? JSON.parse(saved) : INITIAL_DATA;
   });
   const [activeTab, setActiveTab] = useState<"overview" | "expenses" | "vehicles" | "loans" | "settings">("overview");
-  const [selectedMonth, setSelectedMonth] = useState<string>(data.months[data.months.length - 1]?.month || "");
+  const [selectedYear, setSelectedYear] = useState<number>(data.months[data.months.length - 1]?.year || 2026);
+  const [selectedMonth, setSelectedMonth] = useState<string>(data.months.filter(m => m.year === (data.months[data.months.length - 1]?.year || 2026))[data.months.filter(m => m.year === (data.months[data.months.length - 1]?.year || 2026)).length - 1]?.month || "");
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem("theme") === "dark");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
@@ -31,7 +32,7 @@ export default function App() {
   const pdfRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    localStorage.setItem("finance_data", JSON.stringify(data));
+    localStorage.setItem("finance_data_v3", JSON.stringify(data));
   }, [data]);
 
   useEffect(() => {
@@ -45,75 +46,103 @@ export default function App() {
   }, [isDarkMode]);
 
   const stats = useMemo(() => {
-    const monthData = data.months.find(m => m.month === selectedMonth);
-    const monthSavings = data.savings.filter(s => s.month === selectedMonth).reduce((a, b) => a + (b.value as number), 0);
+    const monthData = data.months.find(m => m.month === selectedMonth && m.year === selectedYear);
+    const monthSavings = data.savings.filter(s => s.month === selectedMonth && s.year === selectedYear).reduce((a, b) => a + (b.value as number), 0);
+    const monthInvestments = data.investments?.filter(i => i.month === selectedMonth && i.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
+    const monthLoanIncome = data.loans.filter(l => l.month === selectedMonth && l.year === selectedYear).reduce((a, b) => a + b.totalValue, 0);
+    const monthLoanPayments = data.loanPayments?.filter(p => p.month === selectedMonth && p.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
+    const monthVehicleExpenses = data.vehicleExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).reduce((a, b) => a + b.value, 0);
+    const monthCategorizedExpenses = data.categorizedExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).reduce((a, b) => a + b.value, 0);
     
-    if (!monthData) return { income: 0, expenses: 0, balance: 0, savings: monthSavings };
-
-    const totalIncome = Object.values(monthData.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
-    const totalExpenses = Object.values(monthData.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+    const baseIncome = monthData ? Object.values(monthData.income).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
+    const totalIncome = baseIncome + monthLoanIncome;
+    const baseExpenses = monthData ? Object.values(monthData.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
+    const totalExpenses = baseExpenses + monthLoanPayments + monthVehicleExpenses + monthCategorizedExpenses;
     
     return {
       income: totalIncome,
       expenses: totalExpenses,
-      balance: totalIncome - totalExpenses,
-      savings: monthSavings
+      balance: totalIncome - totalExpenses - monthInvestments,
+      savings: monthSavings,
+      investments: monthInvestments
     };
-  }, [selectedMonth, data]);
+  }, [selectedMonth, selectedYear, data]);
 
   const chartData = useMemo(() => {
-    return data.months.map(m => {
-      const totalIncome = Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
-      const totalExpenses = Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+    return data.months.filter(m => m.year === selectedYear).map(m => {
+      const baseIncome = Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      const monthLoanIncome = data.loans.filter(l => l.month === m.month && l.year === m.year).reduce((a, b) => a + b.totalValue, 0);
+      const monthLoanPayments = data.loanPayments?.filter(p => p.month === m.month && p.year === m.year).reduce((a, b) => a + b.value, 0) || 0;
+      const totalIncome = baseIncome + monthLoanIncome;
+      
+      const baseExpenses = Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      const totalExpenses = baseExpenses + monthLoanPayments;
+      const monthInvestments = data.investments?.filter(i => i.month === m.month && i.year === m.year).reduce((a, b) => a + b.value, 0) || 0;
+      
       return {
         name: m.month,
         Renda: totalIncome,
         Gastos: totalExpenses,
-        Saldo: totalIncome - totalExpenses
+        Saldo: totalIncome - totalExpenses - monthInvestments
       };
     });
-  }, [data]);
+  }, [selectedYear, data]);
 
   const expenseBreakdown = useMemo(() => {
-    const expenses = data.categorizedExpenses.filter(e => e.month === selectedMonth);
+    const expenses = data.categorizedExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear);
     const grouped = expenses.reduce((acc: any, curr) => {
       acc[curr.category] = (acc[curr.category] || 0) + curr.value;
       return acc;
     }, {});
 
     return Object.entries(grouped).map(([name, value]) => ({ name, value: value as number }));
-  }, [selectedMonth, data]);
+  }, [selectedMonth, selectedYear, data]);
 
   const vehicleStats = useMemo(() => {
-    const expenses = data.vehicleExpenses.filter(e => e.month === selectedMonth);
+    const expenses = data.vehicleExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear);
     
     const carFuel = expenses.filter(e => e.type === "Carro" && e.category === "Combustível").reduce((a, b) => a + b.value, 0);
     const carMaint = expenses.filter(e => e.type === "Carro" && e.category === "Manutenção").reduce((a, b) => a + b.value, 0);
+    const carOther = expenses.filter(e => e.type === "Carro" && e.category !== "Combustível" && e.category !== "Manutenção").reduce((a, b) => a + b.value, 0);
     
     const motoFuel = expenses.filter(e => e.type === "Moto" && e.category === "Combustível").reduce((a, b) => a + b.value, 0);
     const motoMaint = expenses.filter(e => e.type === "Moto" && e.category === "Manutenção").reduce((a, b) => a + b.value, 0);
+    const motoOther = expenses.filter(e => e.type === "Moto" && e.category !== "Combustível" && e.category !== "Manutenção").reduce((a, b) => a + b.value, 0);
     
     return { 
-      carTotal: carFuel + carMaint, 
+      carTotal: carFuel + carMaint + carOther, 
       carFuel, 
       carMaint, 
-      motoTotal: motoFuel + motoMaint, 
+      motoTotal: motoFuel + motoMaint + motoOther, 
       motoFuel, 
       motoMaint 
     };
-  }, [selectedMonth, data]);
+  }, [selectedMonth, selectedYear, data]);
 
   const annualStats = useMemo(() => {
-    let totalIncome = 0;
+    let baseIncome = 0;
     let totalExpenses = 0;
 
-    data.months.forEach(m => {
-      totalIncome += Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+    const filteredMonths = data.months.filter(m => m.year === selectedYear);
+    filteredMonths.forEach(m => {
+      baseIncome += Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
       totalExpenses += Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
     });
 
-    return { totalIncome, totalExpenses };
-  }, [data]);
+    const totalLoanIncome = data.loans.filter(l => l.year === selectedYear).reduce((a, b) => a + b.totalValue, 0);
+    const totalLoanPayments = data.loanPayments?.filter(p => p.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
+    const totalVehicleExpenses = data.vehicleExpenses.filter(e => e.year === selectedYear).reduce((a, b) => a + b.value, 0);
+    const totalCategorizedExpenses = data.categorizedExpenses.filter(e => e.year === selectedYear).reduce((a, b) => a + b.value, 0);
+    
+    const totalIncome = baseIncome + totalLoanIncome;
+    const totalInvestments = data.investments?.filter(i => i.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
+
+    return { 
+      totalIncome, 
+      totalExpenses: totalExpenses + totalLoanPayments + totalVehicleExpenses + totalCategorizedExpenses, 
+      totalInvestments 
+    };
+  }, [selectedYear, data]);
 
   const exportToJson = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -133,6 +162,14 @@ export default function App() {
       try {
         const importedData = JSON.parse(event.target?.result as string);
         setData(importedData);
+        
+        // Set initial year and month from imported data
+        if (importedData.months && importedData.months.length > 0) {
+          const lastMonth = importedData.months[importedData.months.length - 1];
+          setSelectedYear(lastMonth.year);
+          setSelectedMonth(lastMonth.month);
+        }
+        
         alert("Dados importados com sucesso!");
       } catch (err) {
         alert("Erro ao importar arquivo JSON.");
@@ -189,7 +226,7 @@ export default function App() {
       
       // Pass the base64 data and explicitly state the format
       pdf.addImage(base64Data, "JPEG", 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
-      pdf.save(`relatorio_financeiro_anual_${data.months[0]?.year || 2026}.pdf`);
+      pdf.save(`relatorio_financeiro_anual_${selectedYear}.pdf`);
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
       alert("Erro ao gerar o relatório PDF. Tente novamente.");
@@ -209,7 +246,7 @@ export default function App() {
       } else if (type === "income" || type === "fixed_expense") {
         // Update the specific month's income or expense object
         newData.months = newData.months.map(m => {
-          if (m.month === entry.month) {
+          if (m.month === entry.month && m.year === entry.year) {
             if (type === "income") {
               return { ...m, income: { ...m.income, [entry.field]: entry.value } };
             } else {
@@ -222,9 +259,27 @@ export default function App() {
         newData.categorizedExpenses = [...newData.categorizedExpenses, entry];
       } else if (type === "vehicle") {
         newData.vehicleExpenses = [...newData.vehicleExpenses, entry];
+      } else if (type === "investment") {
+        newData.investments = [...(newData.investments || []), entry];
       } else if (type === "loan") {
         if (editingLoan) {
-          newData.loans = newData.loans.map(l => l.id === editingLoan.id ? { ...entry, id: editingLoan.id } : l);
+          const diff = entry.paidInstallments - editingLoan.paidInstallments;
+          if (diff > 0) {
+            const paymentValue = diff * entry.installmentValue;
+            const newPayment: LoanPayment = {
+              id: Math.random().toString(36).substr(2, 9),
+              loanId: editingLoan.id,
+              value: paymentValue,
+              month: selectedMonth,
+              year: selectedYear
+            };
+            newData.loanPayments = [...(newData.loanPayments || []), newPayment];
+          }
+          newData.loans = newData.loans.map(l => l.id === editingLoan.id ? { 
+            ...entry, 
+            id: editingLoan.id,
+            endMonth: entry.paidInstallments === entry.installments ? selectedMonth : l.endMonth
+          } : l);
         } else {
           newData.loans = [...newData.loans, entry];
         }
@@ -238,14 +293,40 @@ export default function App() {
 
   const payOffLoan = (loanId: string) => {
     if (confirm("Tem certeza que deseja quitar este empréstimo?")) {
-      setData(prev => ({
-        ...prev,
-        loans: prev.loans.map(l => 
-          l.id === loanId ? { ...l, paidInstallments: l.installments } : l
-        )
-      }));
+      setData(prev => {
+        const loan = prev.loans.find(l => l.id === loanId);
+        if (!loan) return prev;
+        
+        const remainingInstallments = loan.installments - loan.paidInstallments;
+        const totalPayment = remainingInstallments * loan.installmentValue;
+        
+        const newPayment: LoanPayment = {
+          id: Math.random().toString(36).substr(2, 9),
+          loanId: loanId,
+          value: totalPayment,
+          month: selectedMonth,
+          year: selectedYear
+        };
+
+        return {
+          ...prev,
+          loans: prev.loans.map(l => 
+            l.id === loanId ? { ...l, paidInstallments: l.installments, endMonth: selectedMonth } : l
+          ),
+          loanPayments: [...(prev.loanPayments || []), newPayment]
+        };
+      });
     }
   };
+
+  const activeLoans = useMemo(() => {
+    const loansInYear = data.loans.filter(l => l.year === selectedYear);
+    const loansWithPaymentsInYear = data.loans.filter(l => 
+      data.loanPayments?.some(p => p.loanId === l.id && p.year === selectedYear)
+    );
+    const combined = Array.from(new Set([...loansInYear, ...loansWithPaymentsInYear]));
+    return combined;
+  }, [data.loans, data.loanPayments, selectedYear]);
 
   const handleEditLoan = (loan: Loan) => {
     setEditingLoan(loan);
@@ -257,7 +338,7 @@ export default function App() {
       {/* PDF Report Template (Hidden) */}
       <div style={{ position: "absolute", left: "-9999px", top: 0, height: 0, overflow: "hidden" }}>
         <div ref={pdfRef} className="p-8 bg-white text-slate-900 w-[210mm] pdf-report">
-          <AnnualPdfReportTemplate data={data} />
+          <AnnualPdfReportTemplate data={data} year={selectedYear} />
         </div>
       </div>
 
@@ -306,12 +387,27 @@ export default function App() {
         <header className="flex flex-col gap-4 mb-8 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white md:text-3xl">Dashboard Financeiro</h1>
-            <p className="text-slate-500 dark:text-slate-400">Acompanhe sua saúde financeira de 2026</p>
+            <p className="text-slate-500 dark:text-slate-400">Acompanhe sua saúde financeira de {selectedYear}</p>
           </div>
           
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 bg-white dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm self-start">
-              {data.months.map(m => (
+              <select 
+                value={selectedYear}
+                onChange={(e) => {
+                  const year = parseInt(e.target.value);
+                  setSelectedYear(year);
+                  const firstMonthOfYear = data.months.find(m => m.year === year)?.month || "";
+                  setSelectedMonth(firstMonthOfYear);
+                }}
+                className="bg-transparent border-none text-sm font-bold focus:ring-0 px-2 cursor-pointer outline-none"
+              >
+                {Array.from(new Set(data.months.map(m => m.year))).sort().map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <div className="w-px h-4 bg-slate-200 dark:bg-slate-800 mx-1" />
+              {data.months.filter(m => m.year === selectedYear).map(m => (
                 <button
                   key={m.month}
                   onClick={() => setSelectedMonth(m.month)}
@@ -345,7 +441,35 @@ export default function App() {
         </header>
 
         <AnimatePresence mode="wait">
-          {activeTab === "overview" && (
+          {data.months.length === 0 ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center py-20 text-center"
+            >
+              <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 mb-6">
+                <FileText size={40} />
+              </div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Nenhum dado encontrado</h2>
+              <p className="text-slate-500 dark:text-slate-400 max-w-md mb-8">
+                Comece importando um backup existente ou adicione seu primeiro lançamento para começar a acompanhar suas finanças.
+              </p>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 bg-slate-900 dark:bg-white dark:text-slate-900 text-white px-6 py-3 rounded-xl font-bold cursor-pointer hover:opacity-90 transition-all">
+                  <Upload size={20} />
+                  Importar Backup
+                  <input type="file" accept=".json" onChange={importFromJson} className="hidden" />
+                </label>
+                <button 
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-all"
+                >
+                  <Plus size={20} />
+                  Novo Lançamento
+                </button>
+              </div>
+            </motion.div>
+          ) : activeTab === "overview" && (
             <motion.div
               key="overview"
               initial={{ opacity: 0, y: 20 }}
@@ -354,7 +478,7 @@ export default function App() {
               className="space-y-6"
             >
               {/* Summary Cards */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 <Card 
                   title="Renda Total" 
                   value={stats.income} 
@@ -372,6 +496,14 @@ export default function App() {
                   trend="+5%"
                 />
                 <Card 
+                  title="Investimentos" 
+                  value={stats.investments} 
+                  icon={PieChartIcon} 
+                  color="text-amber-600" 
+                  bgColor="bg-amber-50 dark:bg-amber-900/20"
+                  trend="Patrimônio"
+                />
+                <Card 
                   title="Saldo Final" 
                   value={stats.balance} 
                   icon={Wallet} 
@@ -383,9 +515,9 @@ export default function App() {
                   title="Economias" 
                   value={stats.savings} 
                   icon={PiggyBank} 
-                  color="text-amber-600" 
-                  bgColor="bg-amber-50 dark:bg-amber-900/20"
-                  trend="Investido"
+                  color="text-indigo-600" 
+                  bgColor="bg-indigo-50 dark:bg-indigo-900/20"
+                  trend="Reserva"
                 />
               </div>
 
@@ -396,7 +528,7 @@ export default function App() {
                     <Calendar size={20} className="text-blue-600" />
                     Resumo Anual Acumulado
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div className="space-y-1">
                       <p className="text-xs font-medium text-slate-500 uppercase">Renda Anual</p>
                       <p className="text-2xl font-bold text-emerald-600">{formatCurrency(annualStats.totalIncome)}</p>
@@ -406,12 +538,16 @@ export default function App() {
                       <p className="text-2xl font-bold text-rose-600">{formatCurrency(annualStats.totalExpenses)}</p>
                     </div>
                     <div className="space-y-1">
+                      <p className="text-xs font-medium text-slate-500 uppercase">Investimentos</p>
+                      <p className="text-2xl font-bold text-amber-600">{formatCurrency(annualStats.totalInvestments)}</p>
+                    </div>
+                    <div className="space-y-1">
                       <p className="text-xs font-medium text-slate-500 uppercase">Saldo Anual</p>
                       <p className={cn(
                         "text-2xl font-bold",
-                        annualStats.totalIncome - annualStats.totalExpenses >= 0 ? "text-blue-600" : "text-rose-600"
+                        annualStats.totalIncome - annualStats.totalExpenses - annualStats.totalInvestments >= 0 ? "text-blue-600" : "text-rose-600"
                       )}>
-                        {formatCurrency(annualStats.totalIncome - annualStats.totalExpenses)}
+                        {formatCurrency(annualStats.totalIncome - annualStats.totalExpenses - annualStats.totalInvestments)}
                       </p>
                     </div>
                   </div>
@@ -532,7 +668,7 @@ export default function App() {
               <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Detalhamento de Despesas - {selectedMonth}</h3>
-                  <span className="text-sm text-slate-500">{data.categorizedExpenses.filter(e => e.month === selectedMonth).length} transações</span>
+                  <span className="text-sm text-slate-500">{data.categorizedExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).length} transações</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -545,7 +681,7 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {data.categorizedExpenses
-                        .filter(e => e.month === selectedMonth)
+                        .filter(e => e.month === selectedMonth && e.year === selectedYear)
                         .map((expense) => (
                           <tr key={expense.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
                             <td className="px-6 py-4 font-medium">{expense.description}</td>
@@ -603,7 +739,7 @@ export default function App() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold text-slate-400 uppercase">Lançamentos Recentes</h4>
                     {data.vehicleExpenses
-                      .filter(e => e.month === selectedMonth && e.type === "Carro")
+                      .filter(e => e.month === selectedMonth && e.year === selectedYear && e.type === "Carro")
                       .map(e => (
                         <div key={e.id} className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                           <div className="flex flex-col">
@@ -644,7 +780,7 @@ export default function App() {
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold text-slate-400 uppercase">Lançamentos Recentes</h4>
                     {data.vehicleExpenses
-                      .filter(e => e.month === selectedMonth && e.type === "Moto")
+                      .filter(e => e.month === selectedMonth && e.year === selectedYear && e.type === "Moto")
                       .map(e => (
                         <div key={e.id} className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                           <div className="flex flex-col">
@@ -668,7 +804,7 @@ export default function App() {
               exit={{ opacity: 0, y: -20 }}
               className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
             >
-              {data.loans.map((loan) => (
+              {activeLoans.map((loan) => (
                 <div key={loan.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-400">
@@ -682,7 +818,12 @@ export default function App() {
                     </span>
                   </div>
                   <h4 className="font-bold text-slate-900 dark:text-white mb-1">{loan.description}</h4>
-                  <p className="text-xs text-slate-500 mb-4">Parcela: {formatCurrency(loan.installmentValue)}</p>
+                  <div className="flex justify-between items-center mb-4">
+                    <p className="text-xs text-slate-500">Parcela: {formatCurrency(loan.installmentValue)}</p>
+                    {loan.endMonth && (
+                      <p className="text-[10px] text-emerald-600 font-medium">Quitado em: {loan.endMonth}</p>
+                    )}
+                  </div>
                   
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs font-medium">
@@ -759,13 +900,36 @@ export default function App() {
                     <FileText size={20} className="text-blue-600" />
                     Relatórios
                   </h3>
-                  <p className="text-sm text-slate-500 mb-6">Gere um relatório anual detalhado em PDF com todos os dados de {data.months[0]?.year || 2026}.</p>
+                  <p className="text-sm text-slate-500 mb-6">Gere um relatório anual detalhado em PDF com todos os dados de {selectedYear}.</p>
                   <button 
                     onClick={generatePDF}
                     className="flex items-center justify-center gap-2 w-full bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white py-3 rounded-xl font-bold transition-all"
                   >
                     <FileText size={20} />
                     Gerar Relatório Anual PDF
+                  </button>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-rose-200 dark:border-rose-900/30 shadow-sm">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-rose-600">
+                    <AlertCircle size={20} />
+                    Zona de Perigo
+                  </h3>
+                  <p className="text-sm text-slate-500 mb-6">Apague todos os dados salvos localmente. Esta ação não pode ser desfeita.</p>
+                  <button 
+                    onClick={() => {
+                      if (confirm("Tem certeza que deseja apagar TODOS os dados? Esta ação é irreversível.")) {
+                        localStorage.removeItem("finance_data_v3");
+                        setData(INITIAL_DATA);
+                        setSelectedMonth("");
+                        setSelectedYear(2026);
+                        alert("Todos os dados foram apagados.");
+                      }
+                    }}
+                    className="flex items-center justify-center gap-2 w-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 py-3 rounded-xl font-bold transition-all"
+                  >
+                    <X size={20} />
+                    Apagar Tudo
                   </button>
                 </div>
               </div>
@@ -794,6 +958,7 @@ export default function App() {
                 onAdd={handleAddEntry} 
                 months={data.months.map(m => m.month)} 
                 initialLoan={editingLoan}
+                selectedYear={selectedYear}
               />
             </motion.div>
           </div>
@@ -803,63 +968,100 @@ export default function App() {
   );
 }
 
-function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
-  const year = data.months[0]?.year || 2026;
+function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: number }) {
+  const filteredData = useMemo(() => {
+    return {
+      ...data,
+      months: data.months.filter(m => m.year === year),
+      loans: data.loans.filter(l => l.year === year),
+      vehicleExpenses: data.vehicleExpenses.filter(e => e.year === year),
+      savings: data.savings.filter(s => s.year === year),
+      categorizedExpenses: data.categorizedExpenses.filter(e => e.year === year),
+      investments: data.investments?.filter(i => i.year === year) || [],
+      loanPayments: data.loanPayments?.filter(p => p.year === year) || []
+    };
+  }, [data, year]);
   
   const totals = useMemo(() => {
-    let totalIncome = 0;
+    let baseIncome = 0;
     let totalFixedExpenses = 0;
     
-    data.months.forEach(m => {
-      totalIncome += Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+    filteredData.months.forEach(m => {
+      baseIncome += Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
       totalFixedExpenses += Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
     });
 
-    const totalCategorized = data.categorizedExpenses.reduce((a, b) => a + b.value, 0);
-    const totalVehicle = data.vehicleExpenses.reduce((a, b) => a + b.value, 0);
-    const totalSavings = data.savings.reduce((a, b) => a + b.value, 0);
+    const totalLoanIncome = filteredData.loans.reduce((a, b) => a + b.totalValue, 0);
+    const totalLoanPayments = filteredData.loanPayments?.reduce((a, b) => a + b.value, 0) || 0;
+    const totalIncome = baseIncome + totalLoanIncome;
     
-    // Annual summary matches the chart logic (only fixed/income from months)
-    const totalExpenses = totalFixedExpenses;
+    const totalCategorized = filteredData.categorizedExpenses.reduce((a, b) => a + b.value, 0);
+    const totalVehicle = filteredData.vehicleExpenses.reduce((a, b) => a + b.value, 0);
+    const totalSavings = filteredData.savings.reduce((a, b) => a + b.value, 0);
+    const totalInvestments = filteredData.investments?.reduce((a, b) => a + b.value, 0) || 0;
+    
+    const totalExpenses = totalFixedExpenses + totalLoanPayments + totalCategorized + totalVehicle;
 
     return {
       income: totalIncome,
       expenses: totalExpenses,
-      balance: totalIncome - totalExpenses,
+      balance: totalIncome - totalExpenses - totalInvestments,
       savings: totalSavings,
+      investments: totalInvestments,
       fixed: totalFixedExpenses,
       categorized: totalCategorized,
-      vehicle: totalVehicle
+      vehicle: totalVehicle,
+      loanPayments: totalLoanPayments
     };
-  }, [data]);
+  }, [filteredData]);
 
   const annualIncomeBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    data.months.forEach(m => {
+    filteredData.months.forEach(m => {
       Object.entries(m.income).forEach(([key, value]) => {
         breakdown[key] = (breakdown[key] || 0) + (value as number);
       });
     });
+    
+    const totalLoanIncome = filteredData.loans.reduce((a, b) => a + b.totalValue, 0);
+    if (totalLoanIncome > 0) {
+      breakdown["Empréstimos Recebidos"] = totalLoanIncome;
+    }
+    
     return Object.entries(breakdown);
-  }, [data]);
+  }, [filteredData]);
 
   const annualFixedBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    data.months.forEach(m => {
+    filteredData.months.forEach(m => {
       Object.entries(m.expenses).forEach(([key, value]) => {
         breakdown[key] = (breakdown[key] || 0) + (value as number);
       });
     });
+    
+    if (totals.loanPayments > 0) {
+      breakdown["Pagamento de Empréstimos"] = totals.loanPayments;
+    }
+
     return Object.entries(breakdown);
-  }, [data]);
+  }, [filteredData, totals.loanPayments]);
 
   const annualCategorizedBreakdown = useMemo(() => {
     const breakdown: Record<string, number> = {};
-    data.categorizedExpenses.forEach(e => {
+    filteredData.categorizedExpenses.forEach(e => {
       breakdown[e.category] = (breakdown[e.category] || 0) + e.value;
     });
-    return Object.entries(breakdown);
-  }, [data]);
+    return Object.entries(breakdown).sort((a, b) => b[1] - a[1]);
+  }, [filteredData]);
+
+  const activeLoans = useMemo(() => {
+    const loansInYear = data.loans.filter(l => l.year === year);
+    const loansWithPaymentsInYear = data.loans.filter(l => 
+      data.loanPayments?.some(p => p.loanId === l.id && p.year === year)
+    );
+    const combined = Array.from(new Set([...loansInYear, ...loansWithPaymentsInYear]));
+    return combined;
+  }, [data.loans, data.loanPayments, year]);
 
   return (
     <div className="space-y-8">
@@ -875,7 +1077,7 @@ function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
       </div>
 
       {/* Resumo Anual */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-5 gap-4">
         <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
           <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Renda Anual</p>
           <p className="text-xl font-bold text-emerald-700">{formatCurrency(totals.income)}</p>
@@ -884,13 +1086,17 @@ function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
           <p className="text-xs font-bold text-rose-600 uppercase mb-1">Gastos Anuais</p>
           <p className="text-xl font-bold text-rose-700">{formatCurrency(totals.expenses)}</p>
         </div>
+        <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+          <p className="text-xs font-bold text-amber-600 uppercase mb-1">Investimentos</p>
+          <p className="text-xl font-bold text-amber-700">{formatCurrency(totals.investments)}</p>
+        </div>
         <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
           <p className="text-xs font-bold text-blue-600 uppercase mb-1">Saldo Acumulado</p>
           <p className="text-xl font-bold text-blue-700">{formatCurrency(totals.balance)}</p>
         </div>
-        <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
-          <p className="text-xs font-bold text-amber-600 uppercase mb-1">Total Economias</p>
-          <p className="text-xl font-bold text-amber-700">{formatCurrency(totals.savings)}</p>
+        <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100">
+          <p className="text-xs font-bold text-indigo-600 uppercase mb-1">Economias</p>
+          <p className="text-xl font-bold text-indigo-700">{formatCurrency(totals.savings)}</p>
         </div>
       </div>
 
@@ -909,10 +1115,15 @@ function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {data.months.map(m => {
-              const mIncome = Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+              const baseIncome = Object.values(m.income).reduce((a, b) => (a as number) + (b as number), 0) as number;
+              const mLoanIncome = data.loans.filter(l => l.month === m.month).reduce((a, b) => a + b.totalValue, 0);
+              const mLoanPayments = data.loanPayments?.filter(p => p.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
+              const mIncome = baseIncome + mLoanIncome - mLoanPayments;
+              
               const mFixed = Object.values(m.expenses).reduce((a, b) => (a as number) + (b as number), 0) as number;
               const mVar = data.categorizedExpenses.filter(e => e.month === m.month).reduce((a, b) => a + b.value, 0);
               const mVeh = data.vehicleExpenses.filter(e => e.month === m.month).reduce((a, b) => a + b.value, 0);
+              const mInv = data.investments?.filter(i => i.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
               const mTotalExp = mFixed + mVar + mVeh;
               return (
                 <tr key={m.month}>
@@ -920,7 +1131,7 @@ function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
                   <td className="px-4 py-2 text-right text-emerald-600">{formatCurrency(mIncome)}</td>
                   <td className="px-4 py-2 text-right text-slate-600">{formatCurrency(mFixed)}</td>
                   <td className="px-4 py-2 text-right text-rose-600">{formatCurrency(mVar + mVeh)}</td>
-                  <td className="px-4 py-2 text-right font-bold">{formatCurrency(mIncome - mTotalExp)}</td>
+                  <td className="px-4 py-2 text-right font-bold">{formatCurrency(mIncome - mTotalExp - mInv)}</td>
                 </tr>
               );
             })}
@@ -955,6 +1166,26 @@ function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
                   <td className="py-2 text-right font-medium">{formatCurrency(value)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </section>
+
+        {/* Detalhamento de Investimentos */}
+        <section className="col-span-2">
+          <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Investimentos Realizados</h2>
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {data.investments?.map((inv) => (
+                <tr key={inv.id}>
+                  <td className="py-2 text-slate-600">{inv.description} ({inv.month})</td>
+                  <td className="py-2 text-right font-medium text-amber-600">{formatCurrency(inv.value)}</td>
+                </tr>
+              ))}
+              {(!data.investments || data.investments.length === 0) && (
+                <tr>
+                  <td colSpan={2} className="py-4 text-center text-slate-400 italic">Nenhum investimento registrado</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </section>
@@ -1027,15 +1258,17 @@ function AnnualPdfReportTemplate({ data }: { data: FinanceData }) {
             <tr>
               <th className="px-4 py-2 text-left">Descrição</th>
               <th className="px-4 py-2 text-center">Parcelas</th>
+              <th className="px-4 py-2 text-center">Quitação</th>
               <th className="px-4 py-2 text-right">Valor Total</th>
               <th className="px-4 py-2 text-right">Restante</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.loans.map(l => (
+            {activeLoans.map(l => (
               <tr key={l.id}>
                 <td className="px-4 py-2">{l.description}</td>
                 <td className="px-4 py-2 text-center">{l.paidInstallments}/{l.installments}</td>
+                <td className="px-4 py-2 text-center text-slate-500">{l.endMonth || '-'}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(l.totalValue)}</td>
                 <td className="px-4 py-2 text-right font-medium text-rose-600">
                   {formatCurrency((l.installments - l.paidInstallments) * l.installmentValue)}
@@ -1071,13 +1304,14 @@ function Card({ title, value, icon: Icon, color, bgColor, trend }: any) {
   );
 }
 
-function AddEntryForm({ onAdd, months, initialLoan }: { onAdd: (type: string, entry: any) => void, months: string[], initialLoan?: Loan | null }) {
-  const [type, setType] = useState<"expense" | "month" | "vehicle" | "loan" | "income" | "fixed_expense">(initialLoan ? "loan" : "expense");
+function AddEntryForm({ onAdd, months, initialLoan, selectedYear }: { onAdd: (type: string, entry: any) => void, months: string[], initialLoan?: Loan | null, selectedYear: number }) {
+  const [type, setType] = useState<"expense" | "month" | "vehicle" | "loan" | "income" | "fixed_expense" | "investment">(initialLoan ? "loan" : "expense");
   const [formData, setFormData] = useState<any>({
     description: initialLoan?.description || "",
     value: initialLoan?.installmentValue.toString() || "",
     category: "Outros",
     month: initialLoan?.month || months[months.length - 1] || "",
+    year: initialLoan?.year || selectedYear,
     type: "Carro",
     field: "salario", // for income/fixed_expense
     installments: initialLoan?.installments.toString() || "1",
@@ -1116,15 +1350,16 @@ function AddEntryForm({ onAdd, months, initialLoan }: { onAdd: (type: string, en
           <option value="fixed_expense">Contas Fixas (Cartões/Água/Luz)</option>
           <option value="expense">Gasto Variável (Mercado/Lazer)</option>
           <option value="vehicle">Gasto Veículo (Combustível/Peças)</option>
+          <option value="investment">Investimento</option>
           <option value="loan">Novo Empréstimo</option>
           <option value="month">Novo Mês</option>
         </select>
       </div>
 
       {type !== "month" && (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-500 mb-1">Mês Referência</label>
+            <label className="block text-sm font-medium text-slate-500 mb-1">Mês</label>
             <select 
               value={formData.month}
               onChange={(e) => setFormData({...formData, month: e.target.value})}
@@ -1132,6 +1367,16 @@ function AddEntryForm({ onAdd, months, initialLoan }: { onAdd: (type: string, en
             >
               {months.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-500 mb-1">Ano</label>
+            <input 
+              type="number" 
+              required
+              value={formData.year}
+              onChange={(e) => setFormData({...formData, year: parseInt(e.target.value)})}
+              className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-blue-600"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-500 mb-1">Valor (R$)</label>
@@ -1253,6 +1498,20 @@ function AddEntryForm({ onAdd, months, initialLoan }: { onAdd: (type: string, en
             />
           </div>
         </>
+      )}
+
+      {type === "investment" && (
+        <div>
+          <label className="block text-sm font-medium text-slate-500 mb-1">Descrição do Investimento</label>
+          <input 
+            type="text" 
+            required
+            value={formData.description}
+            onChange={(e) => setFormData({...formData, description: e.target.value})}
+            className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-blue-600"
+            placeholder="Ex: Tesouro Direto, Ações..."
+          />
+        </div>
       )}
 
       {type === "loan" && (
