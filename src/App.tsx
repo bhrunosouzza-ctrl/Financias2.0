@@ -15,6 +15,8 @@ import { FinanceData, MonthData, CategorizedExpense, VehicleExpense, Loan, Inves
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
+const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4"];
 
 export default function App() {
@@ -46,25 +48,59 @@ export default function App() {
   }, [isDarkMode]);
 
   const stats = useMemo(() => {
-    const monthData = data.months.find(m => m.month === selectedMonth && m.year === selectedYear);
-    const monthSavings = data.savings.filter(s => s.month === selectedMonth && s.year === selectedYear).reduce((a, b) => a + (b.value as number), 0);
-    const monthInvestments = data.investments?.filter(i => i.month === selectedMonth && i.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
-    const monthLoanIncome = data.loans.filter(l => l.month === selectedMonth && l.year === selectedYear).reduce((a, b) => a + b.totalValue, 0);
-    const monthLoanPayments = data.loanPayments?.filter(p => p.month === selectedMonth && p.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
-    const monthVehicleExpenses = data.vehicleExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).reduce((a, b) => a + b.value, 0);
-    const monthCategorizedExpenses = data.categorizedExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear).reduce((a, b) => a + b.value, 0);
+    const getMonthStats = (month: string, year: number) => {
+      const monthData = data.months.find(m => m.month === month && m.year === year);
+      const monthSavings = data.savings.filter(s => s.month === month && s.year === year).reduce((a, b) => a + (b.value as number), 0);
+      const monthInvestments = data.investments?.filter(i => i.month === month && i.year === year).reduce((a, b) => a + b.value, 0) || 0;
+      const monthLoanIncome = data.loans.filter(l => l.month === month && l.year === year).reduce((a, b) => a + b.totalValue, 0);
+      const monthLoanPayments = data.loanPayments?.filter(p => p.month === month && p.year === year).reduce((a, b) => a + b.value, 0) || 0;
+      const monthVehicleExpenses = data.vehicleExpenses.filter(e => e.month === month && e.year === year).reduce((a, b) => a + b.value, 0);
+      const monthCategorizedExpenses = data.categorizedExpenses.filter(e => e.month === month && e.year === year).reduce((a, b) => a + b.value, 0);
+      
+      const baseIncome = monthData ? Object.values(monthData.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
+      const totalIncome = baseIncome + monthLoanIncome;
+      const baseExpenses = monthData ? Object.values(monthData.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
+      const totalExpenses = baseExpenses + monthLoanPayments + monthVehicleExpenses + monthCategorizedExpenses;
+      
+      return {
+        income: totalIncome,
+        expenses: totalExpenses,
+        balance: totalIncome - totalExpenses - monthInvestments,
+        savings: monthSavings,
+        investments: monthInvestments
+      };
+    };
+
+    const current = getMonthStats(selectedMonth, selectedYear);
     
-    const baseIncome = monthData ? Object.values(monthData.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
-    const totalIncome = baseIncome + monthLoanIncome;
-    const baseExpenses = monthData ? Object.values(monthData.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
-    const totalExpenses = baseExpenses + monthLoanPayments + monthVehicleExpenses + monthCategorizedExpenses;
+    // Calculate previous month
+    const monthIndex = MONTHS.indexOf(selectedMonth);
+    let prevMonth = "";
+    let prevYear = selectedYear;
     
+    if (monthIndex === 0) {
+      prevMonth = MONTHS[11];
+      prevYear = selectedYear - 1;
+    } else if (monthIndex > 0) {
+      prevMonth = MONTHS[monthIndex - 1];
+    }
+    
+    const previous = prevMonth ? getMonthStats(prevMonth, prevYear) : null;
+    
+    const calculateTrend = (curr: number, prev: number | undefined) => {
+      if (prev === undefined || prev === 0) return "0%";
+      const diff = ((curr - prev) / prev) * 100;
+      if (diff === 0) return "0%";
+      return `${diff > 0 ? '+' : ''}${diff.toFixed(0)}%`;
+    };
+
     return {
-      income: totalIncome,
-      expenses: totalExpenses,
-      balance: totalIncome - totalExpenses - monthInvestments,
-      savings: monthSavings,
-      investments: monthInvestments
+      ...current,
+      incomeTrend: previous ? calculateTrend(current.income, previous.income) : "Início",
+      expensesTrend: previous ? calculateTrend(current.expenses, previous.expenses) : "Início",
+      balanceTrend: previous ? calculateTrend(current.balance, previous.balance) : "Início",
+      savingsTrend: previous ? calculateTrend(current.savings, previous.savings) : "Início",
+      investmentsTrend: previous ? calculateTrend(current.investments, previous.investments) : "Início"
     };
   }, [selectedMonth, selectedYear, data]);
 
@@ -485,7 +521,7 @@ export default function App() {
                   icon={TrendingUp} 
                   color="text-emerald-600" 
                   bgColor="bg-emerald-50 dark:bg-emerald-900/20"
-                  trend="+12%"
+                  trend={stats.incomeTrend}
                 />
                 <Card 
                   title="Gastos Totais" 
@@ -493,7 +529,7 @@ export default function App() {
                   icon={TrendingDown} 
                   color="text-rose-600" 
                   bgColor="bg-rose-50 dark:bg-rose-900/20"
-                  trend="+5%"
+                  trend={stats.expensesTrend}
                 />
                 <Card 
                   title="Investimentos" 
@@ -501,7 +537,7 @@ export default function App() {
                   icon={PieChartIcon} 
                   color="text-amber-600" 
                   bgColor="bg-amber-50 dark:bg-amber-900/20"
-                  trend="Patrimônio"
+                  trend={stats.investmentsTrend}
                 />
                 <Card 
                   title="Saldo Final" 
@@ -509,7 +545,7 @@ export default function App() {
                   icon={Wallet} 
                   color="text-blue-600" 
                   bgColor="bg-blue-50 dark:bg-blue-900/20"
-                  trend="Saudável"
+                  trend={stats.balanceTrend}
                 />
                 <Card 
                   title="Economias" 
@@ -517,7 +553,7 @@ export default function App() {
                   icon={PiggyBank} 
                   color="text-indigo-600" 
                   bgColor="bg-indigo-50 dark:bg-indigo-900/20"
-                  trend="Reserva"
+                  trend={stats.savingsTrend}
                 />
               </div>
 
@@ -1287,14 +1323,24 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
 }
 
 function Card({ title, value, icon: Icon, color, bgColor, trend }: any) {
+  const isPercentage = typeof trend === 'string' && (trend.includes('%') || trend === "0%");
+  const isPositive = isPercentage && trend.startsWith('+');
+  const isNegative = isPercentage && trend.startsWith('-');
+
   return (
     <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between mb-4">
         <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center", bgColor, color)}>
           <Icon size={24} />
         </div>
-        <div className="flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-1 rounded-full">
-          <ArrowUpRight size={14} />
+        <div className={cn(
+          "flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full",
+          isPercentage 
+            ? (isPositive ? "text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20" : isNegative ? "text-rose-600 bg-rose-50 dark:bg-rose-900/20" : "text-slate-500 bg-slate-50 dark:bg-slate-800/20")
+            : "text-blue-600 bg-blue-50 dark:bg-blue-900/20"
+        )}>
+          {isPercentage && isPositive && <ArrowUpRight size={12} />}
+          {isPercentage && isNegative && <ArrowDownRight size={12} />}
           {trend}
         </div>
       </div>
