@@ -60,7 +60,7 @@ export default function App() {
       const baseIncome = monthData ? Object.values(monthData.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
       const totalIncome = baseIncome + monthLoanIncome;
       const baseExpenses = monthData ? Object.values(monthData.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number : 0;
-      const totalExpenses = baseExpenses + monthLoanPayments + monthVehicleExpenses + monthCategorizedExpenses;
+      const totalExpenses = baseExpenses + monthLoanPayments;
       
       return {
         income: totalIncome,
@@ -175,7 +175,7 @@ export default function App() {
 
     return { 
       totalIncome, 
-      totalExpenses: totalExpenses + totalLoanPayments + totalVehicleExpenses + totalCategorizedExpenses, 
+      totalExpenses: totalExpenses + totalLoanPayments, 
       totalInvestments 
     };
   }, [selectedYear, data]);
@@ -1036,7 +1036,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
     const totalSavings = filteredData.savings.reduce((a, b) => a + b.value, 0);
     const totalInvestments = filteredData.investments?.reduce((a, b) => a + b.value, 0) || 0;
     
-    const totalExpenses = totalFixedExpenses + totalLoanPayments + totalCategorized + totalVehicle;
+    const totalExpenses = totalFixedExpenses + totalLoanPayments;
 
     return {
       income: totalIncome,
@@ -1145,7 +1145,6 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
               <th className="px-4 py-2 text-left">Mês</th>
               <th className="px-4 py-2 text-right">Renda</th>
               <th className="px-4 py-2 text-right">Gastos Fixos</th>
-              <th className="px-4 py-2 text-right">Gastos Variáveis</th>
               <th className="px-4 py-2 text-right">Saldo</th>
             </tr>
           </thead>
@@ -1157,16 +1156,13 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
               const mIncome = baseIncome + mLoanIncome - mLoanPayments;
               
               const mFixed = Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
-              const mVar = data.categorizedExpenses.filter(e => e.month === m.month).reduce((a, b) => a + b.value, 0);
-              const mVeh = data.vehicleExpenses.filter(e => e.month === m.month).reduce((a, b) => a + b.value, 0);
               const mInv = data.investments?.filter(i => i.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
-              const mTotalExp = mFixed + mVar + mVeh;
+              const mTotalExp = mFixed;
               return (
                 <tr key={m.month}>
                   <td className="px-4 py-2 font-medium">{m.month}</td>
                   <td className="px-4 py-2 text-right text-emerald-600">{formatCurrency(mIncome)}</td>
                   <td className="px-4 py-2 text-right text-slate-600">{formatCurrency(mFixed)}</td>
-                  <td className="px-4 py-2 text-right text-rose-600">{formatCurrency(mVar + mVeh)}</td>
                   <td className="px-4 py-2 text-right font-bold">{formatCurrency(mIncome - mTotalExp - mInv)}</td>
                 </tr>
               );
