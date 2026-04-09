@@ -137,13 +137,13 @@ export default function App() {
   const vehicleStats = useMemo(() => {
     const expenses = data.vehicleExpenses.filter(e => e.month === selectedMonth && e.year === selectedYear);
     
-    const carFuel = expenses.filter(e => e.type === "Carro" && e.category === "Combustível").reduce((a, b) => a + b.value, 0);
+    const carFuel = expenses.filter(e => e.type === "Carro" && (e.category === "Combustível" || e.description.toLowerCase().includes("abastecimento"))).reduce((a, b) => a + b.value, 0);
     const carMaint = expenses.filter(e => e.type === "Carro" && e.category === "Manutenção").reduce((a, b) => a + b.value, 0);
-    const carOther = expenses.filter(e => e.type === "Carro" && e.category !== "Combustível" && e.category !== "Manutenção").reduce((a, b) => a + b.value, 0);
+    const carOther = expenses.filter(e => e.type === "Carro" && e.category !== "Combustível" && e.category !== "Manutenção" && !e.description.toLowerCase().includes("abastecimento")).reduce((a, b) => a + b.value, 0);
     
-    const motoFuel = expenses.filter(e => e.type === "Moto" && e.category === "Combustível").reduce((a, b) => a + b.value, 0);
+    const motoFuel = expenses.filter(e => e.type === "Moto" && (e.category === "Combustível" || e.description.toLowerCase().includes("abastecimento"))).reduce((a, b) => a + b.value, 0);
     const motoMaint = expenses.filter(e => e.type === "Moto" && e.category === "Manutenção").reduce((a, b) => a + b.value, 0);
-    const motoOther = expenses.filter(e => e.type === "Moto" && e.category !== "Combustível" && e.category !== "Manutenção").reduce((a, b) => a + b.value, 0);
+    const motoOther = expenses.filter(e => e.type === "Moto" && e.category !== "Combustível" && e.category !== "Manutenção" && !e.description.toLowerCase().includes("abastecimento")).reduce((a, b) => a + b.value, 0);
     
     return { 
       carTotal: carFuel + carMaint + carOther, 
@@ -327,9 +327,45 @@ export default function App() {
     setEditingLoan(null);
   };
 
+  const handleDeleteEntry = (type: string, id: string, extra?: any) => {
+    console.log("Deleting entry:", { type, id, extra });
+    setData(prev => {
+      if (type === "expense") {
+        return { ...prev, categorizedExpenses: prev.categorizedExpenses.filter(e => e.id !== id) };
+      }
+      if (type === "vehicle") {
+        return { ...prev, vehicleExpenses: prev.vehicleExpenses.filter(e => e.id !== id) };
+      }
+      if (type === "investment") {
+        return { ...prev, investments: (prev.investments || []).filter(i => i.id !== id) };
+      }
+      if (type === "loan") {
+        return { 
+          ...prev, 
+          loans: prev.loans.filter(l => l.id !== id),
+          loanPayments: (prev.loanPayments || []).filter(p => p.loanId !== id)
+        };
+      }
+      if (type === "income" || type === "fixed_expense") {
+        const { month, year, field } = extra;
+        return {
+          ...prev,
+          months: prev.months.map(m => {
+            if (m.month === month && m.year === year) {
+              const newObj = { ...(type === "income" ? m.income : m.expenses) };
+              delete newObj[field];
+              return { ...m, [type === "income" ? "income" : "expenses"]: newObj };
+            }
+            return m;
+          })
+        };
+      }
+      return prev;
+    });
+  };
+
   const payOffLoan = (loanId: string) => {
-    if (confirm("Tem certeza que deseja quitar este empréstimo?")) {
-      setData(prev => {
+    setData(prev => {
         const loan = prev.loans.find(l => l.id === loanId);
         if (!loan) return prev;
         
@@ -352,7 +388,6 @@ export default function App() {
           loanPayments: [...(prev.loanPayments || []), newPayment]
         };
       });
-    }
   };
 
   const activeLoans = useMemo(() => {
@@ -690,6 +725,58 @@ export default function App() {
                   </div>
                 </div>
               </div>
+
+              {/* Fixed Entries Section */}
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                  <FileText size={20} className="text-blue-600" />
+                  Lançamentos Fixos e Ganhos - {selectedMonth}
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-4">Ganhos</h4>
+                    <div className="space-y-3">
+                      {data.months.find(m => m.month === selectedMonth && m.year === selectedYear)?.income && 
+                        Object.entries(data.months.find(m => m.month === selectedMonth && m.year === selectedYear)!.income).map(([field, value]) => (
+                          <div key={field} className="flex items-center justify-between p-3 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-xl group">
+                            <span className="text-sm font-medium capitalize">{field}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm font-bold text-emerald-600">{formatCurrency(value as number)}</span>
+                              <button 
+                                onClick={() => handleDeleteEntry("income", "", { month: selectedMonth, year: selectedYear, field })}
+                                className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-4">Contas Fixas</h4>
+                    <div className="space-y-3">
+                      {data.months.find(m => m.month === selectedMonth && m.year === selectedYear)?.expenses && 
+                        Object.entries(data.months.find(m => m.month === selectedMonth && m.year === selectedYear)!.expenses).map(([field, value]) => (
+                          <div key={field} className="flex items-center justify-between p-3 bg-rose-50/50 dark:bg-rose-900/10 rounded-xl group">
+                            <span className="text-sm font-medium capitalize">{field}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-sm font-bold text-rose-600">{formatCurrency(value as number)}</span>
+                              <button 
+                                onClick={() => handleDeleteEntry("fixed_expense", "", { month: selectedMonth, year: selectedYear, field })}
+                                className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  </div>
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -719,7 +806,7 @@ export default function App() {
                       {data.categorizedExpenses
                         .filter(e => e.month === selectedMonth && e.year === selectedYear)
                         .map((expense) => (
-                          <tr key={expense.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                          <tr key={expense.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
                             <td className="px-6 py-4 font-medium">{expense.description}</td>
                             <td className="px-6 py-4">
                               <span className="px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-medium">
@@ -727,7 +814,15 @@ export default function App() {
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right font-semibold text-rose-600">
-                              {formatCurrency(expense.value)}
+                              <div className="flex items-center justify-end gap-3">
+                                {formatCurrency(expense.value)}
+                                <button 
+                                  onClick={() => handleDeleteEntry("expense", expense.id)}
+                                  className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -777,12 +872,20 @@ export default function App() {
                     {data.vehicleExpenses
                       .filter(e => e.month === selectedMonth && e.year === selectedYear && e.type === "Carro")
                       .map(e => (
-                        <div key={e.id} className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                        <div key={e.id} className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg group">
                           <div className="flex flex-col">
                             <span className="text-slate-600 dark:text-slate-400 font-medium">{e.description}</span>
                             <span className="text-[10px] text-slate-400">{e.category}</span>
                           </div>
-                          <span className="font-semibold">{formatCurrency(e.value)}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">{formatCurrency(e.value)}</span>
+                            <button 
+                              onClick={() => handleDeleteEntry("vehicle", e.id)}
+                              className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                   </div>
@@ -818,12 +921,20 @@ export default function App() {
                     {data.vehicleExpenses
                       .filter(e => e.month === selectedMonth && e.year === selectedYear && e.type === "Moto")
                       .map(e => (
-                        <div key={e.id} className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                        <div key={e.id} className="flex items-center justify-between text-sm p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg group">
                           <div className="flex flex-col">
                             <span className="text-slate-600 dark:text-slate-400 font-medium">{e.description}</span>
                             <span className="text-[10px] text-slate-400">{e.category}</span>
                           </div>
-                          <span className="font-semibold">{formatCurrency(e.value)}</span>
+                          <div className="flex items-center gap-3">
+                            <span className="font-semibold">{formatCurrency(e.value)}</span>
+                            <button 
+                              onClick={() => handleDeleteEntry("vehicle", e.id)}
+                              className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
                         </div>
                       ))}
                   </div>
@@ -841,19 +952,27 @@ export default function App() {
               className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
             >
               {activeLoans.map((loan) => (
-                <div key={loan.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden">
+                <div key={loan.id} className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm relative overflow-hidden group">
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-400">
                       <AlertCircle size={20} />
                     </div>
-                    <span className={cn(
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleDeleteEntry("loan", loan.id)}
+                        className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                      >
+                        <X size={16} />
+                      </button>
+                      <span className={cn(
                       "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
                       loan.paidInstallments === loan.installments ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
                     )}>
                       {loan.paidInstallments === loan.installments ? "Quitado" : "Em Aberto"}
                     </span>
                   </div>
-                  <h4 className="font-bold text-slate-900 dark:text-white mb-1">{loan.description}</h4>
+                </div>
+                <h4 className="font-bold text-slate-900 dark:text-white mb-1">{loan.description}</h4>
                   <div className="flex justify-between items-center mb-4">
                     <p className="text-xs text-slate-500">Parcela: {formatCurrency(loan.installmentValue)}</p>
                     {loan.endMonth && (
@@ -954,13 +1073,10 @@ export default function App() {
                   <p className="text-sm text-slate-500 mb-6">Apague todos os dados salvos localmente. Esta ação não pode ser desfeita.</p>
                   <button 
                     onClick={() => {
-                      if (confirm("Tem certeza que deseja apagar TODOS os dados? Esta ação é irreversível.")) {
-                        localStorage.removeItem("finance_data_v3");
-                        setData(INITIAL_DATA);
-                        setSelectedMonth("");
-                        setSelectedYear(2026);
-                        alert("Todos os dados foram apagados.");
-                      }
+                      localStorage.removeItem("finance_data_v3");
+                      setData(INITIAL_DATA);
+                      setSelectedMonth("");
+                      setSelectedYear(2026);
                     }}
                     className="flex items-center justify-center gap-2 w-full bg-rose-50 dark:bg-rose-900/20 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 py-3 rounded-xl font-bold transition-all"
                   >
@@ -1361,6 +1477,14 @@ function AddEntryForm({ onAdd, months, initialLoan, selectedYear }: { onAdd: (ty
     endMonth: initialLoan?.endMonth || ""
   });
 
+  useEffect(() => {
+    if (type === "vehicle" && formData.category === "Outros") {
+      setFormData(prev => ({ ...prev, category: "Combustível" }));
+    } else if (type === "expense" && formData.category === "Combustível") {
+      setFormData(prev => ({ ...prev, category: "Alimentação" }));
+    }
+  }, [type]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(formData.value) || 0;
@@ -1524,7 +1648,8 @@ function AddEntryForm({ onAdd, months, initialLoan, selectedYear }: { onAdd: (ty
                 className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-blue-600"
               >
                 <option value="Combustível">Combustível</option>
-                <option value="Manutenção">Manutenção/Peças</option>
+                <option value="Manutenção">Manutenção</option>
+                <option value="Outros">Outros</option>
               </select>
             </div>
           </div>
