@@ -133,4 +133,100 @@
   .pdf-report * {
     color-scheme: light !important;
   }
+
+  /* Fix for html2canvas oklch parsing error */
+  .pdf-report {
+    --color-slate-50: #f8fafc !important;
+    --color-slate-100: #f1f5f9 !important;
+    --color-slate-200: #e2e8f0 !important;
+    --color-slate-300: #cbd5e1 !important;
+    --color-slate-400: #94a3b8 !important;
+    --color-slate-500: #64748b !important;
+    --color-slate-600: #475569 !important;
+    --color-slate-700: #334155 !important;
+    --color-slate-800: #1e293b !important;
+    --color-slate-900: #0f172a !important;
+    
+    --color-blue-50: #eff6ff !important;
+    --color-blue-100: #dbeafe !important;
+    --color-blue-200: #bfdbfe !important;
+    --color-blue-500: #3b82f6 !important;
+    --color-blue-600: #2563eb !important;
+    --color-blue-700: #1d4ed8 !important;
+    
+    --color-emerald-50: #ecfdf5 !important;
+    --color-emerald-100: #d1fae5 !important;
+    --color-emerald-500: #10b981 !important;
+    --color-emerald-600: #059669 !important;
+    --color-emerald-700: #047857 !important;
+    
+    --color-rose-50: #fff1f2 !important;
+    --color-rose-100: #ffe4e6 !important;
+    --color-rose-500: #f43f5e !important;
+    --color-rose-600: #e11d48 !important;
+    --color-rose-700: #be123c !important;
+    
+    --color-amber-50: #fffbeb !important;
+    --color-amber-100: #fef3c7 !important;
+    --color-amber-500: #f59e0b !important;
+    --color-amber-600: #d97706 !important;
+    --color-amber-700: #b45309 !important;
+
+    --color-indigo-50: #eef2ff !important;
+    --color-indigo-600: #4f46e5 !important;
+    --color-indigo-700: #4338ca !important;
+
+    /* Reset problematic Tailwind variables */
+    --tw-ring-color: transparent !important;
+    --tw-ring-shadow: none !important;
+    --tw-shadow: none !important;
+    --tw-outline-style: none !important;
+    --tw-border-opacity: 1 !important;
+    --tw-bg-opacity: 1 !important;
+    --tw-text-opacity: 1 !important;
+  }
+
+  .pdf-report, .pdf-report * {
+    /* Force non-oklch colors for background and text */
+    border-color: currentColor;
+  }
+
+  .pdf-report .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+    border-color: #f1f5f9 !important;
+  }
+  .pdf-report .border-slate-200 { border-color: #e2e8f0 !important; }
+  .pdf-report .border-slate-100 { border-color: #f1f5f9 !important; }
+  .pdf-report .border-blue-100 { border-color: #dbeafe !important; }
+  .pdf-report .border-emerald-100 { border-color: #d1fae5 !important; }
+  .pdf-report .border-rose-100 { border-color: #ffe4e6 !important; }
+  .pdf-report .border-amber-100 { border-color: #fef3c7 !important; }
+  .pdf-report .border-indigo-100 { border-color: #e0e7ff !important; }
+  .pdf-report .border-blue-600 { border-color: #2563eb !important; }
+
+  /* Explicit hex overrides for properties used in the report to avoid oklch */
+  .pdf-report .bg-white { background-color: #ffffff !important; }
+  .pdf-report .bg-slate-50 { background-color: #f8fafc !important; }
+  .pdf-report .bg-emerald-50 { background-color: #ecfdf5 !important; }
+  .pdf-report .bg-rose-50 { background-color: #fff1f2 !important; }
+  .pdf-report .bg-amber-50 { background-color: #fffbeb !important; }
+  .pdf-report .bg-blue-50 { background-color: #eff6ff !important; }
+  .pdf-report .bg-indigo-50 { background-color: #eef2ff !important; }
+
+  .pdf-report .text-blue-600 { color: #2563eb !important; }
+  .pdf-report .text-blue-700 { color: #1d4ed8 !important; }
+  .pdf-report .text-emerald-600 { color: #059669 !important; }
+  .pdf-report .text-emerald-700 { color: #047857 !important; }
+  .pdf-report .text-rose-600 { color: #e11d48 !important; }
+  .pdf-report .text-rose-700 { color: #be123c !important; }
+  .pdf-report .text-amber-600 { color: #d97706 !important; }
+  .pdf-report .text-amber-700 { color: #b45309 !important; }
+  .pdf-report .text-indigo-600 { color: #4f46e5 !important; }
+  .pdf-report .text-indigo-700 { color: #4338ca !important; }
+  .pdf-report .text-slate-400 { color: #94a3b8 !important; }
+  .pdf-report .text-slate-500 { color: #64748b !important; }
+  .pdf-report .text-slate-600 { color: #475569 !important; }
+  .pdf-report .text-slate-900 { color: #0f172a !important; }
+  .pdf-report .text-lg { font-size: 1.125rem !important; }
+  .pdf-report .text-xl { font-size: 1.25rem !important; }
+  .pdf-report .text-3xl { font-size: 1.875rem !important; }
 }

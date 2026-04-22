@@ -258,10 +258,24 @@ export default function App() {
       });
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      
-      // Pass the base64 data and explicitly state the format
-      pdf.addImage(base64Data, "JPEG", 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+      const imgWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Add the first page
+      pdf.addImage(base64Data, "JPEG", 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pageHeight;
+
+      // Add subsequent pages if the content is taller than one page
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(base64Data, "JPEG", 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pageHeight;
+      }
+
       pdf.save(`relatorio_financeiro_anual_${selectedYear}.pdf`);
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
@@ -1122,15 +1136,16 @@ export default function App() {
 
 function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: number }) {
   const filteredData = useMemo(() => {
+    const targetYear = Number(year);
     return {
       ...data,
-      months: data.months.filter(m => m.year === year),
-      loans: data.loans.filter(l => l.year === year),
-      vehicleExpenses: data.vehicleExpenses.filter(e => e.year === year),
-      savings: data.savings.filter(s => s.year === year),
-      categorizedExpenses: data.categorizedExpenses.filter(e => e.year === year),
-      investments: data.investments?.filter(i => i.year === year) || [],
-      loanPayments: data.loanPayments?.filter(p => p.year === year) || []
+      months: (data.months || []).filter(m => Number(m.year) === targetYear),
+      loans: (data.loans || []).filter(l => Number(l.year) === targetYear),
+      vehicleExpenses: (data.vehicleExpenses || []).filter(e => Number(e.year) === targetYear),
+      savings: (data.savings || []).filter(s => Number(s.year) === targetYear),
+      categorizedExpenses: (data.categorizedExpenses || []).filter(e => Number(e.year) === targetYear),
+      investments: (data.investments || []).filter(i => Number(i.year) === targetYear),
+      loanPayments: (data.loanPayments || []).filter(p => Number(p.year) === targetYear)
     };
   }, [data, year]);
   
@@ -1139,20 +1154,20 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
     let totalFixedExpenses = 0;
     
     filteredData.months.forEach(m => {
-      baseIncome += Object.values(m.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
-      totalFixedExpenses += Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
+      baseIncome += Object.values(m.income || {}).reduce((a, b) => Number(a) + Number(b), 0) as number;
+      totalFixedExpenses += Object.values(m.expenses || {}).reduce((a, b) => Number(a) + Number(b), 0) as number;
     });
 
-    const totalLoanIncome = filteredData.loans.reduce((a, b) => a + b.totalValue, 0);
-    const totalLoanPayments = filteredData.loanPayments?.reduce((a, b) => a + b.value, 0) || 0;
+    const totalLoanIncome = (filteredData.loans || []).reduce((a, b) => a + Number(b.totalValue || 0), 0) as number;
+    const totalLoanPayments = (filteredData.loanPayments || []).reduce((a, b) => a + Number(b.value || 0), 0) as number || 0;
+    
+    const totalCategorized = (filteredData.categorizedExpenses || []).reduce((a, b) => a + Number(b.value || 0), 0) as number;
+    const totalVehicle = (filteredData.vehicleExpenses || []).reduce((a, b) => a + Number(b.value || 0), 0) as number;
+    const totalSavings = (filteredData.savings || []).reduce((a, b) => a + Number(b.value || 0), 0) as number;
+    const totalInvestments = (filteredData.investments || []).reduce((a, b) => a + Number(b.value || 0), 0) as number || 0;
+    
     const totalIncome = baseIncome + totalLoanIncome;
-    
-    const totalCategorized = filteredData.categorizedExpenses.reduce((a, b) => a + b.value, 0);
-    const totalVehicle = filteredData.vehicleExpenses.reduce((a, b) => a + b.value, 0);
-    const totalSavings = filteredData.savings.reduce((a, b) => a + b.value, 0);
-    const totalInvestments = filteredData.investments?.reduce((a, b) => a + b.value, 0) || 0;
-    
-    const totalExpenses = totalFixedExpenses + totalLoanPayments;
+    const totalExpenses = totalFixedExpenses + totalLoanPayments + totalCategorized + totalVehicle;
 
     return {
       income: totalIncome,
@@ -1229,7 +1244,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
       </div>
 
       {/* Resumo Anual */}
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-5 gap-4 mb-8">
         <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
           <p className="text-xs font-bold text-emerald-600 uppercase mb-1">Renda Anual</p>
           <p className="text-xl font-bold text-emerald-700">{formatCurrency(totals.income)}</p>
@@ -1253,7 +1268,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
       </div>
 
       {/* Tabela Mensal */}
-      <section>
+      <section className="mb-12">
         <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Resumo por Mês</h2>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
@@ -1265,20 +1280,23 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {data.months.map(m => {
-              const baseIncome = Object.values(m.income || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
-              const mLoanIncome = data.loans.filter(l => l.month === m.month).reduce((a, b) => a + b.totalValue, 0);
-              const mLoanPayments = data.loanPayments?.filter(p => p.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
+            {filteredData.months.map(m => {
+              const baseIncome = Object.values(m.income || {}).reduce((a, b) => Number(a) + Number(b), 0) as number;
+              const mLoanIncome = (filteredData.loans || []).filter(l => l.month === m.month).reduce((a, b) => a + Number(b.totalValue || 0), 0) as number;
+              const mLoanPayments = (filteredData.loanPayments || []).filter(p => p.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number || 0;
               const mIncome = baseIncome + mLoanIncome - mLoanPayments;
               
-              const mFixed = Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
-              const mInv = data.investments?.filter(i => i.month === m.month).reduce((a, b) => a + b.value, 0) || 0;
-              const mTotalExp = mFixed;
+              const mFixed = Object.values(m.expenses || {}).reduce((a, b) => Number(a) + Number(b), 0) as number;
+              const mCategorized = (filteredData.categorizedExpenses || []).filter(e => e.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number;
+              const mVehicle = (filteredData.vehicleExpenses || []).filter(e => e.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number;
+              const mInv = (filteredData.investments || []).filter(i => i.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number || 0;
+              
+              const mTotalExp = mFixed + mCategorized + mVehicle;
               return (
-                <tr key={m.month}>
+                <tr key={`${m.month}-${m.year}`}>
                   <td className="px-4 py-2 font-medium">{m.month}</td>
                   <td className="px-4 py-2 text-right text-emerald-600">{formatCurrency(mIncome)}</td>
-                  <td className="px-4 py-2 text-right text-slate-600">{formatCurrency(mFixed)}</td>
+                  <td className="px-4 py-2 text-right text-slate-600">{formatCurrency(mTotalExp)}</td>
                   <td className="px-4 py-2 text-right font-bold">{formatCurrency(mIncome - mTotalExp - mInv)}</td>
                 </tr>
               );
@@ -1287,7 +1305,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
         </table>
       </section>
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-2 gap-8 mb-12">
         {/* Detalhamento de Renda Anual */}
         <section>
           <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Renda Anual por Fonte</h2>
@@ -1323,13 +1341,13 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
           <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Investimentos Realizados</h2>
           <table className="w-full text-sm">
             <tbody className="divide-y divide-slate-100">
-              {data.investments?.map((inv) => (
+              {filteredData.investments?.map((inv) => (
                 <tr key={inv.id}>
                   <td className="py-2 text-slate-600">{inv.description} ({inv.month})</td>
                   <td className="py-2 text-right font-medium text-amber-600">{formatCurrency(inv.value)}</td>
                 </tr>
               ))}
-              {(!data.investments || data.investments.length === 0) && (
+              {(!filteredData.investments || filteredData.investments.length === 0) && (
                 <tr>
                   <td colSpan={2} className="py-4 text-center text-slate-400 italic">Nenhum investimento registrado</td>
                 </tr>
@@ -1340,7 +1358,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
       </div>
 
       {/* Gastos Variáveis por Categoria */}
-      <section>
+      <section className="mb-12">
         <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Gastos Variáveis por Categoria (Ano)</h2>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
@@ -1356,16 +1374,21 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
                 <td className="px-4 py-2 font-medium">{name}</td>
                 <td className="px-4 py-2 text-right">{formatCurrency(value)}</td>
                 <td className="px-4 py-2 text-right text-slate-500">
-                  {((value / totals.categorized) * 100).toFixed(1)}%
+                  {totals.categorized > 0 ? ((value / totals.categorized) * 100).toFixed(1) : "0.0"}%
                 </td>
               </tr>
             ))}
+            {annualCategorizedBreakdown.length === 0 && (
+              <tr>
+                <td colSpan={3} className="py-4 text-center text-slate-400 italic">Nenhum gasto variável registrado</td>
+              </tr>
+            )}
           </tbody>
         </table>
       </section>
 
       {/* Gastos com Veículos */}
-      <section>
+      <section className="mb-12">
         <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Gastos com Veículos (Ano)</h2>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
@@ -1373,23 +1396,28 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
               <th className="px-4 py-2 text-left">Veículo</th>
               <th className="px-4 py-2 text-right">Combustível</th>
               <th className="px-4 py-2 text-right">Manutenção</th>
+              <th className="px-4 py-2 text-right">Outros</th>
               <th className="px-4 py-2 text-right">Total Acumulado</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {['Carro', 'Moto'].map(type => {
-              const fuel = data.vehicleExpenses
-                .filter(e => e.type === type && e.category === "Combustível")
-                .reduce((acc, e) => acc + e.value, 0);
-              const maint = data.vehicleExpenses
-                .filter(e => e.type === type && e.category === "Manutenção")
-                .reduce((acc, e) => acc + e.value, 0);
-              const total = fuel + maint;
+            {['Carro', 'Moto'].map(vehicleType => {
+              const fuel = (filteredData.vehicleExpenses || [])
+                .filter(e => e.type === vehicleType && e.category === "Combustível")
+                .reduce((acc, e) => acc + Number(e.value || 0), 0) as number;
+              const maint = (filteredData.vehicleExpenses || [])
+                .filter(e => e.type === vehicleType && e.category === "Manutenção")
+                .reduce((acc, e) => acc + Number(e.value || 0), 0) as number;
+              const others = (filteredData.vehicleExpenses || [])
+                .filter(e => e.type === vehicleType && e.category !== "Combustível" && e.category !== "Manutenção")
+                .reduce((acc, e) => acc + Number(e.value || 0), 0) as number;
+              const total = fuel + maint + others;
               return (
-                <tr key={type}>
-                  <td className="px-4 py-2 font-medium">{type}</td>
+                <tr key={vehicleType}>
+                  <td className="px-4 py-2 font-medium">{vehicleType}</td>
                   <td className="px-4 py-2 text-right">{formatCurrency(fuel)}</td>
                   <td className="px-4 py-2 text-right">{formatCurrency(maint)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(others)}</td>
                   <td className="px-4 py-2 text-right font-bold">{formatCurrency(total)}</td>
                 </tr>
               );
@@ -1399,7 +1427,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
       </section>
 
       {/* Empréstimos */}
-      <section>
+      <section className="mb-12">
         <h2 className="text-lg font-bold mb-4 border-b border-slate-200 pb-2">Situação de Empréstimos</h2>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
