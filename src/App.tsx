@@ -24,12 +24,13 @@ export default function App() {
     const saved = localStorage.getItem("finance_data_v3");
     return saved ? JSON.parse(saved) : INITIAL_DATA;
   });
-  const [activeTab, setActiveTab] = useState<"overview" | "expenses" | "vehicles" | "loans" | "settings">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "expenses" | "vehicles" | "loans" | "investments" | "settings">("overview");
   const [selectedYear, setSelectedYear] = useState<number>(data.months[data.months.length - 1]?.year || 2026);
   const [selectedMonth, setSelectedMonth] = useState<string>(data.months.filter(m => m.year === (data.months[data.months.length - 1]?.year || 2026))[data.months.filter(m => m.year === (data.months[data.months.length - 1]?.year || 2026)).length - 1]?.month || "");
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem("theme") === "dark");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
+  const [editingInvestment, setEditingInvestment] = useState<Investment | null>(null);
   const reportRef = useRef<HTMLDivElement>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
 
@@ -51,7 +52,7 @@ export default function App() {
     const getMonthStats = (month: string, year: number) => {
       const monthData = data.months.find(m => m.month === month && m.year === year);
       const monthSavings = data.savings.filter(s => s.month === month && s.year === year).reduce((a, b) => a + (b.value as number), 0);
-      const monthInvestments = data.investments?.filter(i => i.month === month && i.year === year).reduce((a, b) => a + b.value, 0) || 0;
+      const monthInvestments = data.investments?.filter(i => i.month === month && i.year === year).reduce((a, b) => a + (b.isRedemption ? -b.value : b.value), 0) || 0;
       const monthLoanIncome = data.loans.filter(l => l.month === month && l.year === year).reduce((a, b) => a + b.totalValue, 0);
       const monthLoanPayments = data.loanPayments?.filter(p => p.month === month && p.year === year).reduce((a, b) => a + b.value, 0) || 0;
       const monthVehicleExpenses = data.vehicleExpenses.filter(e => e.month === month && e.year === year).reduce((a, b) => a + b.value, 0);
@@ -113,7 +114,7 @@ export default function App() {
       
       const baseExpenses = Object.values(m.expenses || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
       const totalExpenses = baseExpenses + monthLoanPayments;
-      const monthInvestments = data.investments?.filter(i => i.month === m.month && i.year === m.year).reduce((a, b) => a + b.value, 0) || 0;
+      const monthInvestments = data.investments?.filter(i => i.month === m.month && i.year === m.year).reduce((a, b) => a + (b.isRedemption ? -b.value : b.value), 0) || 0;
       
       return {
         name: m.month,
@@ -171,7 +172,7 @@ export default function App() {
     const totalCategorizedExpenses = data.categorizedExpenses.filter(e => e.year === selectedYear).reduce((a, b) => a + b.value, 0);
     
     const totalIncome = baseIncome + totalLoanIncome;
-    const totalInvestments = data.investments?.filter(i => i.year === selectedYear).reduce((a, b) => a + b.value, 0) || 0;
+    const totalInvestments = data.investments?.filter(i => i.year === selectedYear).reduce((a, b) => a + (b.isRedemption ? -b.value : b.value), 0) || 0;
 
     return { 
       totalIncome, 
@@ -418,6 +419,16 @@ export default function App() {
     setIsAddModalOpen(true);
   };
 
+  const handleRedeemInvestment = (inv: Investment) => {
+    setEditingInvestment({
+      ...inv,
+      id: Math.random().toString(36).substr(2, 9), // New ID for the redemption entry
+      description: `Resgate: ${inv.description}`,
+      isRedemption: true
+    });
+    setIsAddModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
       {/* PDF Report Template (Hidden) */}
@@ -441,6 +452,7 @@ export default function App() {
           { id: "expenses", label: "Despesas", icon: CreditCard },
           { id: "vehicles", label: "Veículos", icon: Car },
           { id: "loans", label: "Empréstimos", icon: AlertCircle },
+          { id: "investments", label: "Investimentos", icon: PiggyBank },
           { id: "settings", label: "Ações", icon: Save },
         ].map((tab) => (
           <button
@@ -1033,6 +1045,93 @@ export default function App() {
             </motion.div>
           )}
 
+          {activeTab === "investments" && (
+            <motion.div
+              key="investments"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-6"
+            >
+              <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold">Carteira de Investimentos - {selectedYear}</h3>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">Total Acumulado</p>
+                      <p className="text-lg font-bold text-amber-600">{formatCurrency(annualStats.totalInvestments)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 dark:bg-slate-800/50 text-slate-500 text-xs uppercase tracking-wider">
+                      <tr>
+                        <th className="px-6 py-4 font-semibold">Descrição</th>
+                        <th className="px-6 py-4 font-semibold">Mês</th>
+                        <th className="px-6 py-4 font-semibold">Tipo</th>
+                        <th className="px-6 py-4 font-semibold text-right">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                      {(data.investments || [])
+                        .filter(i => i.year === selectedYear)
+                        .sort((a, b) => MONTHS.indexOf(b.month) - MONTHS.indexOf(a.month))
+                        .map((inv) => (
+                          <tr key={inv.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group">
+                            <td className="px-6 py-4 font-medium">{inv.description}</td>
+                            <td className="px-6 py-4 text-sm text-slate-500">{inv.month}</td>
+                            <td className="px-6 py-4">
+                              <span className={cn(
+                                "px-2 py-1 rounded-full text-[10px] font-bold uppercase",
+                                inv.isRedemption 
+                                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" 
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                              )}>
+                                {inv.isRedemption ? "Resgate" : "Aplicação"}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right font-semibold">
+                              <div className="flex items-center justify-end gap-3">
+                                <span className={inv.isRedemption ? "text-blue-600" : "text-amber-600"}>
+                                  {inv.isRedemption ? "+" : "-"}{formatCurrency(inv.value)}
+                                </span>
+                                {!inv.isRedemption && (
+                                  <button 
+                                    onClick={() => handleRedeemInvestment(inv)}
+                                    className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 rounded-lg hover:bg-blue-100 transition-all"
+                                    title="Resgatar este investimento"
+                                  >
+                                    <ArrowUpRight size={14} />
+                                  </button>
+                                )}
+                                <button 
+                                  onClick={() => handleDeleteEntry("investment", inv.id)}
+                                  className="opacity-100 md:opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 transition-all"
+                                >
+                                  <X size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      {(!data.investments || data.investments.filter(i => i.year === selectedYear).length === 0) && (
+                        <tr>
+                          <td colSpan={4} className="px-6 py-12 text-center text-slate-400">
+                            <div className="flex flex-col items-center gap-2">
+                              <PiggyBank size={32} className="opacity-20" />
+                              <p>Nenhum investimento registrado em {selectedYear}</p>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {activeTab === "settings" && (
             <motion.div
               key="settings"
@@ -1115,8 +1214,10 @@ export default function App() {
               className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <h3 className="text-xl font-bold">{editingLoan ? "Editar Empréstimo" : "Novo Lançamento"}</h3>
-                <button onClick={() => { setIsAddModalOpen(false); setEditingLoan(null); }} className="text-slate-400 hover:text-slate-600">
+                <h3 className="text-xl font-bold">
+                  {editingLoan ? "Editar Empréstimo" : editingInvestment ? "Resgatar Investimento" : "Novo Lançamento"}
+                </h3>
+                <button onClick={() => { setIsAddModalOpen(false); setEditingLoan(null); setEditingInvestment(null); }} className="text-slate-400 hover:text-slate-600">
                   <X size={24} />
                 </button>
               </div>
@@ -1124,6 +1225,7 @@ export default function App() {
                 onAdd={handleAddEntry} 
                 months={data.months.map(m => m.month)} 
                 initialLoan={editingLoan}
+                initialInvestment={editingInvestment}
                 selectedYear={selectedYear}
               />
             </motion.div>
@@ -1164,7 +1266,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
     const totalCategorized = (filteredData.categorizedExpenses || []).reduce((a, b) => a + Number(b.value || 0), 0) as number;
     const totalVehicle = (filteredData.vehicleExpenses || []).reduce((a, b) => a + Number(b.value || 0), 0) as number;
     const totalSavings = (filteredData.savings || []).reduce((a, b) => a + Number(b.value || 0), 0) as number;
-    const totalInvestments = (filteredData.investments || []).reduce((a, b) => a + Number(b.value || 0), 0) as number || 0;
+    const totalInvestments = (filteredData.investments || []).reduce((a, b: any) => a + (b.isRedemption ? -Number(b.value || 0) : Number(b.value || 0)), 0) as number || 0;
     
     const totalIncome = baseIncome + totalLoanIncome;
     const totalExpenses = totalFixedExpenses + totalLoanPayments + totalCategorized + totalVehicle;
@@ -1289,7 +1391,7 @@ function AnnualPdfReportTemplate({ data, year }: { data: FinanceData, year: numb
               const mFixed = Object.values(m.expenses || {}).reduce((a, b) => Number(a) + Number(b), 0) as number;
               const mCategorized = (filteredData.categorizedExpenses || []).filter(e => e.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number;
               const mVehicle = (filteredData.vehicleExpenses || []).filter(e => e.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number;
-              const mInv = (filteredData.investments || []).filter(i => i.month === m.month).reduce((a, b) => a + Number(b.value || 0), 0) as number || 0;
+              const mInv = (filteredData.investments || []).filter(i => i.month === m.month).reduce((a, b: any) => a + (b.isRedemption ? -Number(b.value || 0) : Number(b.value || 0)), 0) as number || 0;
               
               const mTotalExp = mFixed + mCategorized + mVehicle;
               return (
@@ -1490,19 +1592,20 @@ function Card({ title, value, icon: Icon, color, bgColor, trend }: any) {
   );
 }
 
-function AddEntryForm({ onAdd, months, initialLoan, selectedYear }: { onAdd: (type: string, entry: any) => void, months: string[], initialLoan?: Loan | null, selectedYear: number }) {
-  const [type, setType] = useState<"expense" | "month" | "vehicle" | "loan" | "income" | "fixed_expense" | "investment">(initialLoan ? "loan" : "expense");
+function AddEntryForm({ onAdd, months, initialLoan, initialInvestment, selectedYear }: { onAdd: (type: string, entry: any) => void, months: string[], initialLoan?: Loan | null, initialInvestment?: Investment | null, selectedYear: number }) {
+  const [type, setType] = useState<"expense" | "month" | "vehicle" | "loan" | "income" | "fixed_expense" | "investment">(initialLoan ? "loan" : initialInvestment ? "investment" : "expense");
   const [formData, setFormData] = useState<any>({
-    description: initialLoan?.description || "",
-    value: initialLoan?.installmentValue.toString() || "",
+    description: initialLoan?.description || initialInvestment?.description || "",
+    value: initialLoan?.installmentValue.toString() || initialInvestment?.value.toString() || "",
     category: "Outros",
-    month: initialLoan?.month || months[months.length - 1] || "",
-    year: initialLoan?.year || selectedYear,
+    month: initialLoan?.month || initialInvestment?.month || (months.length > 0 ? months[months.length - 1] : ""),
+    year: initialLoan?.year || initialInvestment?.year || selectedYear,
     type: "Carro",
     field: "salario", // for income/fixed_expense
     installments: initialLoan?.installments.toString() || "1",
     paidInstallments: initialLoan?.paidInstallments.toString() || "0",
-    endMonth: initialLoan?.endMonth || ""
+    endMonth: initialLoan?.endMonth || "",
+    isRedemption: initialInvestment?.isRedemption || false
   });
 
   useEffect(() => {
@@ -1696,16 +1799,30 @@ function AddEntryForm({ onAdd, months, initialLoan, selectedYear }: { onAdd: (ty
       )}
 
       {type === "investment" && (
-        <div>
-          <label className="block text-sm font-medium text-slate-500 mb-1">Descrição do Investimento</label>
-          <input 
-            type="text" 
-            required
-            value={formData.description}
-            onChange={(e) => setFormData({...formData, description: e.target.value})}
-            className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-blue-600"
-            placeholder="Ex: Tesouro Direto, Ações..."
-          />
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-500 mb-1">Descrição</label>
+            <input 
+              type="text" 
+              required
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-blue-600"
+              placeholder="Ex: Tesouro Direto, Resgate CDB..."
+            />
+          </div>
+          <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
+            <input 
+              type="checkbox" 
+              id="isRedemption"
+              checked={formData.isRedemption || false}
+              onChange={(e) => setFormData({...formData, isRedemption: e.target.checked})}
+              className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
+            />
+            <label htmlFor="isRedemption" className="text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+              Este é um Resgate (Retirar valor e voltar para o saldo)
+            </label>
+          </div>
         </div>
       )}
 

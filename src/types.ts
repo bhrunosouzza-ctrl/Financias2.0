@@ -57,6 +57,7 @@ export interface Investment {
   value: number;
   month: string;
   year: number;
+  isRedemption?: boolean;
 }
 
 export interface LoanPayment {
